@@ -4,7 +4,7 @@ import urllib.request
 import ssl
 
 # TỰ ĐỘNG TẢI main.py
-MAIN_PY_URL = "https://gitlab.com/maniakov-group/Maniakov-project/-/raw/main/main.py"
+MAIN_PY_URL = "https://raw.githubusercontent.com/URF6160/Netflix-Checker/main/main.py"
 MAIN_PY_FILE = "main.py"
 
 def download_main_py():
@@ -14,7 +14,7 @@ def download_main_py():
     print("\n" + "═" * 50)
     print("✨ Netflix Cookie Checker")
     print("═" * 50)
-    print("📥 Đang tải main.py từ GitLab...")
+    print("📥 Đang tải main.py từ GitHub...")
     
     try:
         ctx = ssl.create_default_context()

@@ -729,7 +729,7 @@ class NetflixCheckerGUI:
             info["userGuid"] = guid
             country = info.get("countryOfSignup") or "?"
             suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=5))
-            fname = f"{country}_Mania_{suffix}.txt"
+            fname = f"{country}_Hachimi_{suffix}.txt"
             
             email = (decode_netflix_value(info.get("email")) or "").strip().lower()
             dup_key = email or guid

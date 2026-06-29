@@ -431,8 +431,10 @@ class NetflixCheckerGUI:
     def refresh_counts(self):
         cookies = []
         if os.path.exists(cookies_folder):
-            cookies = [f for f in os.listdir(cookies_folder) 
-                      if f.lower().endswith((".txt", ".json")) and not f.startswith(".")]
+            for root, dirs, files in os.walk(cookies_folder):
+                for f in files:
+                    if f.lower().endswith((".txt", ".json")) and not f.startswith("."):
+                        cookies.append(f)
         proxies = load_proxies()
         self.folder_label.config(text=f"📁 {len(cookies)} cookies • 🌐 {len(proxies)} proxies")
         self.log(f"🔍 {len(cookies)} cookies, {len(proxies)} proxies", "info")
@@ -528,8 +530,10 @@ class NetflixCheckerGUI:
             
         cookies = []
         if os.path.exists(cookies_folder):
-            cookies = [f for f in os.listdir(cookies_folder) 
-                      if f.lower().endswith((".txt", ".json")) and not f.startswith(".")]
+            for root, dirs, files in os.walk(cookies_folder):
+                for f in files:
+                    if f.lower().endswith((".txt", ".json")) and not f.startswith("."):
+                        cookies.append(f)
         
         if not cookies:
             messagebox.showwarning("!", "Không có cookies!")
@@ -648,13 +652,18 @@ class NetflixCheckerGUI:
         
         retry_codes = {403, 429, 500, 502, 503, 504}
         
-        files = os.listdir(cookies_folder) if os.path.exists(cookies_folder) else []
-        files = [f for f in files if f.lower().endswith((".txt", ".json")) and not f.startswith(".")]
         tasks = []
         states = {}
         
-        for f in files:
-            path = os.path.join(cookies_folder, f)
+        # Quét tất cả file trong folder cookies và subfolders
+        all_cookie_data = []
+        for root, dirs, files in os.walk(cookies_folder):
+            for f in files:
+                if f.lower().endswith((".txt", ".json")) and not f.startswith("."):
+                    all_cookie_data.append((f, os.path.join(root, f)))
+
+        for f, path in all_cookie_data:
+
             try:
                 with open(path, "r", encoding="utf-8", errors="ignore") as fp:
                     content = fp.read()

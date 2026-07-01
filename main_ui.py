@@ -583,6 +583,17 @@ class NetflixCheckerGUI:
         self.stop_btn.config(state=tk.DISABLED, bg=Theme.TEXT_MUTED)
         self.thread_entry.config(state=tk.NORMAL)
         
+        # Xóa folder trống trong cookies
+        if os.path.exists(cookies_folder):
+            for root, dirs, files in os.walk(cookies_folder, topdown=False):
+                for dir_name in dirs:
+                    full_path = os.path.join(root, dir_name)
+                    try:
+                        if not os.listdir(full_path):
+                            os.rmdir(full_path)
+                    except:
+                        pass
+
         # Flush queue để lấy số liệu mới nhất
         time.sleep(0.2)
         try:

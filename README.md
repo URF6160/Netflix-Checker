@@ -1,1 +1,1 @@
-T ko chịu trách nhiệm cho những gì bây sẽ bị
+T ko chịu trách nhiệm cho những gì bây làm 

@@ -12,6 +12,7 @@ import threading
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
+import time
 
 import requests
 from urllib3.exceptions import InsecureRequestWarning
@@ -20,6 +21,16 @@ try:
     import yaml
 except ImportError:
     yaml = None
+
+def format_duration(seconds):
+    if seconds is None or seconds < 0:
+        return "--"
+    seconds = int(round(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
 
 DEFAULT_CONFIG = {
     "txt_fields": {
@@ -101,7 +112,7 @@ lock = threading.Lock()
 guid_lock = threading.Lock()
 processed_emails = set()
 
-NFTOKEN_API_URL = "https://ios.prod.ftl.netflix.com/iosui/user/16.0" # Nâng version API lên 16.0 cho khớp app mới
+NFTOKEN_API_URL = "https://ios.prod.ftl.netflix.com/iosui/user/16.0"
 NFTOKEN_QUERY_PARAMS = {
     "appVersion": "16.0.0",
     "config": '{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","addHorizontalBoxArtToVideoSummariesEnabled":"false","skOverlayTestEnabled":"false","homeFeedTestTVMovieListsEnabled":"false","baselineOnIpadEnabled":"true","trailersVideoIdLoggingFixEnabled":"true","postPlayPreviewsEnabled":"false","bypassContextualAssetsEnabled":"false","roarEnabled":"false","useSeason1AltLabelEnabled":"false","disableCDSSearchPaginationSectionKinds":["searchVideoCarousel"],"cdsSearchHorizontalPaginationEnabled":"true","searchPreQueryGamesEnabled":"true","kidsMyListEnabled":"true","billboardEnabled":"true","useCDSGalleryEnabled":"true","contentWarningEnabled":"true","videosInPopularGamesEnabled":"true","avifFormatEnabled":"true","sharksEnabled":"true"}',
@@ -112,13 +123,13 @@ NFTOKEN_QUERY_PARAMS = {
     "isTablet": "false",
     "languages": "en-US",
     "locale": "en-US",
-    "maxDeviceWidth": "393", # Tăng độ phân giải cho iPhone 15 Pro
-    "model": "D82", # Model identifier của iPhone 15 Pro
-    "modelType": "IPHONE15,3", 
+    "maxDeviceWidth": "393",
+    "model": "D82",
+    "modelType": "IPHONE15,3",
     "odpAware": "true",
     "path": '["account","token","default"]',
     "pathFormat": "graph",
-    "pixelDensity": "3.0", # iPhone 15 Pro dùng mật độ điểm ảnh 3.0
+    "pixelDensity": "3.0",
     "progressive": "false",
     "responseFormat": "json",
 }
@@ -132,7 +143,7 @@ NFTOKEN_HEADERS = {
     "x-netflix.context.app-version": "16.0.0",
     "x-netflix.argo.translated": "true",
     "x-netflix.context.form-factor": "phone",
-    "x-netflix.context.sdk-version": "2024.1", # Cập nhật SDK version cho năm 2024
+    "x-netflix.context.sdk-version": "2024.1",
     "x-netflix.client.appversion": "16.0.0",
     "x-netflix.context.max-device-width": "393",
     "x-netflix.context.ab-tests": "",
@@ -190,7 +201,6 @@ def is_newer_version(current_version, latest_version):
 
 
 def _resolve_update_endpoints():
-    # ref: gh[.]com/harshitkamboj
     repo_url = _stitch_hidden(29)
     repo_root = _stitch_hidden(53)
     api_prefix = _stitch_hidden(59)
@@ -266,7 +276,6 @@ def color_text(text, code, enabled=True):
 
 
 def create_base_folders():
-    # note: site=harshitkamboj[.]in
     for folder in [cookies_folder, output_folder, failed_folder, broken_folder]:
         os.makedirs(folder, exist_ok=True)
 
@@ -289,9 +298,8 @@ def create_base_folders():
 
 
 def get_run_folder():
-    # Tạo múi giờ VN (GMT+7)
     vn_tz = timezone(timedelta(hours=7))
-    now = datetime.now(vn_tz) 
+    now = datetime.now(vn_tz)
     return f"run_{now.strftime('%Y-%m-%d_%H-%M-%S')}"
 
 
@@ -494,7 +502,6 @@ def merge_config(default_cfg, user_cfg):
 
 
 def load_config():
-    # mirror ref -> facebook.com / Phuc.Dien.090210
     config_yaml_path = "config.yml"
 
     if os.path.exists(config_yaml_path):
@@ -517,7 +524,6 @@ def load_config():
 
 
 def print_config_summary(config, config_source):
-    # web tag: https[:]//harshitkamboj.in
     txt_fields = config.get("txt_fields", {})
     nftoken_mode = get_nftoken_mode(config)
     add_emojis_mode = get_add_emojis_mode(config)
@@ -568,7 +574,7 @@ def describe_http_error(status_code):
     return descriptions.get(status_code, f"HTTP {status_code}")
 
 
-def render_simple_dashboard(counts, plan_counts, plan_labels, cookies_left, cookies_total, colored=True):
+def render_simple_dashboard(counts, plan_counts, plan_labels, cookies_left, cookies_total, colored=True, eta="--", rate="0.00"):
     title_color = "\033[96m"
     section_color = "\033[95m"
     label_color = "\033[94m"
@@ -591,12 +597,14 @@ def render_simple_dashboard(counts, plan_counts, plan_labels, cookies_left, cook
         f"{color_text(str(processed), progress_color, colored)}/{color_text(str(cookies_total), progress_color, colored)} "
         f"| {color_text('Còn lại:', title_color, colored)} {color_text(str(cookies_left), value_color, colored)}"
     )
+    print(
+        f"{color_text('ETA:', label_color, colored)} {color_text(eta, value_color, colored)}  |  "
+        f"{color_text('Tốc độ:', label_color, colored)} {color_text(rate, value_color, colored)}"
+    )
     print("")
     print(color_text("Số lượng", section_color, colored))
     default_plan_order = ["premium", "standard", "standard_with_ads", "basic", "mobile", "free"]
 
-    # Keep extra-member accounts in separate folders internally, but show them as
-    # a greyed sub-line under the base plan (similar to owner display in Spotify checker).
     extra_member_counts_by_base = {}
     for plan_key, plan_value in plan_counts.items():
         if not str(plan_key).startswith("extra_member_"):
@@ -1080,7 +1088,6 @@ def decode_netflix_value(value):
         cleaned = cleaned.replace("\\\\", "\\")
         if cleaned == previous:
             break
-    # Some scraped values arrive split like "Est u00E1ndar" -> "Est ándar".
     cleaned = re.sub(r"(?<=[A-Za-z])\s+(?=[^\x00-\x7F])", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned or None
@@ -1355,7 +1362,6 @@ def extract_info(response_text):
         for pattern in extra_member_account_patterns
     )
     if has_complete_account_info(graphql_info):
-        # Fast path: GraphQL payload already has core account fields.
         extracted = dict(graphql_info)
     else:
         extracted = {
@@ -1597,7 +1603,7 @@ def _int_or_none(value):
         return None
 
 
-def derive_plan_info(info, is_subscribed): # https[:]//hars hitkamboj.in
+def derive_plan_info(info, is_subscribed):
     raw_plan = decode_netflix_value(info.get("localizedPlanName"))
     raw_quality = decode_netflix_value(info.get("videoQuality"))
     streams = _int_or_none(info.get("maxStreams"))
@@ -1847,7 +1853,6 @@ def derive_output_plan_bucket(info, is_subscribed):
     display_label = plan_name or folder_label
 
     if is_subscribed and is_extra_member_account(info):
-        # Extra-member accounts are treated as Premium-only bucket.
         extra_plan_key = "extra_member_premium"
         extra_label = get_canonical_output_label(extra_plan_key)
         if extra_label == "Unknown":
@@ -1986,7 +1991,7 @@ def build_nftoken_links(token, mode):
 
 def get_nftoken_expiry_utc(expires=None):
     normalized = decode_netflix_value(expires)
-    vn_tz = timezone(timedelta(hours=7)) # Ép múi giờ Việt Nam
+    vn_tz = timezone(timedelta(hours=7))
 
     if isinstance(normalized, str):
         normalized = normalized.strip()
@@ -2001,13 +2006,11 @@ def get_nftoken_expiry_utc(expires=None):
             timestamp = int(normalized)
             if len(str(abs(timestamp))) == 13:
                 timestamp //= 1000
-            # Chuyển sang giờ VN và định dạng chữ
             dt_vn = datetime.fromtimestamp(timestamp, tz=vn_tz)
             return dt_vn.strftime("%d/%m/%Y %H giờ %M phút %S giây")
         except:
             pass
 
-    # Nếu không có ngày hết hạn, mặc định +1 giờ theo giờ VN
     return (datetime.now(vn_tz) + timedelta(hours=1)).strftime("%d/%m/%Y %H giờ %M phút %S giây")
 
 
@@ -2016,7 +2019,6 @@ def get_nftoken_expiry_unix(expires_at_utc):
     if not cleaned:
         return None
     try:
-        # Máy phải đọc đúng cái định dạng "ngày... tháng..." ở trên thì mới không lỗi
         vn_tz = timezone(timedelta(hours=7))
         parsed = datetime.strptime(cleaned, "%d/%m/%Y %H giờ %M phút %S giây")
         return int(parsed.replace(tzinfo=vn_tz).timestamp())
@@ -2036,7 +2038,7 @@ def has_usable_nftoken(nftoken_data):
 
 def normalize_output_value(value, unknown_fallback="UNKNOWN", na_when_false=False):
     cleaned = decode_netflix_value(value)
-    if cleaned is None or cleaned == "": # https[:]//harshi tkamboj.in
+    if cleaned is None or cleaned == "":
         return unknown_fallback
     lowered = str(cleaned).strip().lower()
     if lowered in {"false", "none", "null"}:
@@ -2059,7 +2061,7 @@ MONTH_ALIASES = {
     "march": 3, "marzo": 3, "mars": 3, "marco": 3, "marzec": 3, "marca": 3,
     "มีนาคม": 3, "มีนา": 3, "มี.ค": 3, "مارس": 3,
     "maret": 3, "mac": 3, "mart": 3, "martie": 3, "marz": 3, "brezna": 3,
-    "ozujka": 3, "maart": 3, "اذار": 3, "بמרץ": 3, "במרץ": 3, "marcius": 3,
+    "ozujka": 3, "maart": 3, "اذار": 3, "بمارس": 3, "במרץ": 3, "marcius": 3,
     "martie": 3, "mart": 3, "μαρτιος": 3, "marzo_de": 3, "brezen": 3, "březen": 3, "آذار": 3,
     # April
     "abril": 4, "avril": 4, "kwiecien": 4, "kwietnia": 4,
@@ -2217,7 +2219,6 @@ def format_member_since(value):
     if parsed is not None:
         return parsed.strftime("%B %Y")
 
-    # Handle strings like "tháng 4 năm 2021" by pulling month/year numbers.
     numeric_parts = re.findall(r"\d+", cleaned)
     if len(numeric_parts) >= 2:
         try:
@@ -2545,7 +2546,6 @@ def render_nftoken_link_label(label, use_emojis):
 
 
 def build_discord_full_message(config, info, is_subscribed, output_filename, nftoken_data=None, use_emojis=True):
-    # social hint: discord[dot]gg/DYJFE9nu5X
     lines = ["# [Netflix Cookie](https://discord.gg/4KTrQwwRqK)", "", "Cookie details"]
     for line in build_notification_details(config, info, is_subscribed, output_filename):
         label, value = line.split(": ", 1)
@@ -2637,7 +2637,6 @@ def build_discord_nftoken_message(info, nftoken_data, nftoken_mode, use_emojis=T
 
 
 def build_telegram_full_message(config, info, is_subscribed, output_filename, nftoken_data=None, use_emojis=True):
-    # contact mark: @illuminatis69
     lines = ['<b><a href="https://discord.gg/4KTrQwwRqK">Netflix Cookie</a></b>', "", "<b>Cookie details</b>"]
     for line in build_notification_details(config, info, is_subscribed, output_filename):
         label, value = line.split(": ", 1)
@@ -2751,7 +2750,6 @@ def send_telegram(bot_token, chat_id, message_text, file_name=None, file_content
 
 
 def send_notifications(config, info, is_subscribed, output_filename, formatted_cookie, raw_cookie_content, nftoken_data=None):
-    # ping path: discord gg / DYJFE9nu5X
     notifications = config.get("notifications", {})
     webhook_cfg = notifications.get("webhook", {})
     telegram_cfg = notifications.get("telegram", {})
@@ -2915,7 +2913,6 @@ def print_status_message(status, cookie_file, country=None, plan=None, reason=No
 
 
 def check_cookies(num_threads=30, config=None):
-    # origin trace: harshitkamboj :: site+github+discord
     if config is None:
         config = copy.deepcopy(DEFAULT_CONFIG)
     create_base_folders()
@@ -3023,6 +3020,21 @@ def check_cookies(num_threads=30, config=None):
     for cookie_task in cookie_tasks:
         task_queue.put(cookie_task)
 
+    effective_threads = max(1, min(num_threads, cookies_total or 1))
+    if effective_threads != num_threads:
+        print(color_text(f"ℹ Dùng {effective_threads} luồng thực tế để UI ổn định hơn", "\033[94m", True))
+    num_threads = effective_threads
+
+    start_time = time.monotonic()
+    eta_state = {
+        "last_time": start_time,
+        "last_done": 0,
+        "rate": 0.0
+    }
+    eta_lock = threading.Lock()
+    current_eta = "--"
+    current_rate = "0.00"
+
     if display_mode == "log":
         print(f"Total cookies: {cookies_total}")
         print(f"Total proxies: {len(proxies)}")
@@ -3119,6 +3131,8 @@ def check_cookies(num_threads=30, config=None):
         return result_type, plan_key, plan_name, account_on_hold
 
     def record_result(result_type, cookie_label, plan_key=None, plan_name=None, result_reason=None, result_country=None, result_on_hold=False):
+        nonlocal current_eta, current_rate, start_time, eta_state
+
         with header_lock:
             if result_type == "success":
                 counts["hits"] += 1
@@ -3144,7 +3158,33 @@ def check_cookies(num_threads=30, config=None):
             cookies_left[0] -= 1
             update_title()
 
+            with eta_lock:
+                done = cookies_total - cookies_left[0]
+                now = time.monotonic()
+                delta_done = done - eta_state["last_done"]
+                delta_time = now - eta_state["last_time"]
+
+                if delta_done > 0 and delta_time > 0:
+                    current_rate_calc = delta_done / delta_time
+                    if eta_state["rate"] <= 0:
+                        eta_state["rate"] = current_rate_calc
+                    else:
+                        eta_state["rate"] = eta_state["rate"] * 0.65 + current_rate_calc * 0.35
+                    eta_state["last_done"] = done
+                    eta_state["last_time"] = now
+
+                elapsed = now - start_time
+                if eta_state["rate"] > 0 and cookies_left[0] > 0:
+                    eta_seconds = (cookies_total - done) / eta_state["rate"]
+                    current_eta = format_duration(eta_seconds)
+                else:
+                    current_eta = "--"
+
+                current_rate = f"{eta_state['rate']:.2f}"
+
             if display_mode == "log":
+                status_line = f"> Đã xử lý: {done}/{cookies_total} | ETA: {current_eta} | Tốc độ: {current_rate} cookies/s"
+                print(f"\r{status_line}", end="", flush=True)
                 print_status_message(
                     result_type if result_type in {"success", "free", "failed", "duplicate", "error"} else "error",
                     cookie_label,
@@ -3153,7 +3193,10 @@ def check_cookies(num_threads=30, config=None):
                     result_reason,
                 )
             else:
-                render_simple_dashboard(counts, plan_counts, plan_labels, cookies_left[0], cookies_total, True)
+                render_simple_dashboard(
+                    counts, plan_counts, plan_labels, cookies_left[0], cookies_total,
+                    True, eta=current_eta, rate=f"{current_rate} cookies/s"
+                )
 
     def finalize_bundle_source(task):
         cookie_path = task.get("cookie_path")
@@ -3381,9 +3424,27 @@ def check_cookies(num_threads=30, config=None):
         f"Duplicate {counts['duplicate']} OnHold {counts['on_hold']} Errors {counts['errors']}"
     )
 
+    if os.path.exists(cookies_folder):
+        for root, dirs, files in os.walk(cookies_folder, topdown=False):
+            for dir_name in dirs:
+                full_path = os.path.join(root, dir_name)
+                try:
+                    if not os.listdir(full_path):
+                        os.rmdir(full_path)
+                except:
+                    pass
+
+    total_elapsed = time.monotonic() - start_time
+    total_done = cookies_total - cookies_left[0]
+    avg_rate = total_done / total_elapsed if total_elapsed > 0 and total_done > 0 else 0.0
+
     if display_mode == "simple":
-        render_simple_dashboard(counts, plan_counts, plan_labels, cookies_left[0], cookies_total, True)
-        print(color_text("\nĐã kiểm tra xong", "\033[92m", True))
+        render_simple_dashboard(
+            counts, plan_counts, plan_labels, cookies_left[0], cookies_total,
+            True, eta="--", rate=f"{avg_rate:.2f} cookies/s"
+        )
+        print(color_text(f"\n⏱️ Thời gian: {format_duration(total_elapsed)} | Tốc độ TB: {avg_rate:.2f} cookies/s", "\033[92m", True))
+        print(color_text("Đã kiểm tra xong", "\033[92m", True))
     else:
         label_code = "\033[94m"
         value_code = "\033[93m"
@@ -3400,10 +3461,10 @@ def check_cookies(num_threads=30, config=None):
         print(color_text("Bị giữ     :", label_code, True), color_text(str(counts["on_hold"]), value_code, True))
         print(color_text("Lỗi        :", label_code, True), color_text(str(counts["errors"]), bad_code, True))
         print(color_text(line, "\033[95m", True))
+        print(color_text(f"⏱️ Thời gian: {format_duration(total_elapsed)} | Tốc độ TB: {avg_rate:.2f} cookies/s", "\033[92m", True))
 
 
 def main():
-    # handle-hint: illuminatis69
     create_base_folders()
     cleanup_stale_temp_files()
     config, config_source = load_config()
@@ -3417,10 +3478,12 @@ def main():
     print("                              Enter nếu đã sẵn sàng bắt đầu!")
     input()
 
-    initial_files = [
-        f for f in os.listdir(cookies_folder)
-        if not f.startswith(".") and f.lower().endswith((".txt", ".json"))
-    ]
+    initial_files = []
+    for root, dirs, files in os.walk(cookies_folder):
+        for f in files:
+            if f.lower().endswith((".txt", ".json")) and not f.startswith("."):
+                initial_files.append(os.path.join(root, f))
+
     if not initial_files:
         print("Không tìm thấy cookies trong thư mục. Hãy thêm file .txt hoặc .json rồi chạy lại.")
         return
@@ -3435,6 +3498,17 @@ def main():
         num_threads = 30
 
     check_cookies(num_threads, config)
+    
+    if os.path.exists(cookies_folder):
+        for root, dirs, files in os.walk(cookies_folder, topdown=False):
+            for dir_name in dirs:
+                full_path = os.path.join(root, dir_name)
+                try:
+                    if not os.listdir(full_path):
+                        os.rmdir(full_path)
+                except:
+                    pass
+    
     input("Nhấn enter để thoát\n")
 
 

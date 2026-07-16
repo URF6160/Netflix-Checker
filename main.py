@@ -101,56 +101,58 @@ lock = threading.Lock()
 guid_lock = threading.Lock()
 processed_emails = set()
 
-NFTOKEN_API_URL = "https://ios.prod.ftl.netflix.com/iosui/user/15.48"
+NFTOKEN_API_URL = "https://ios.prod.ftl.netflix.com/iosui/user/16.0" # Nâng version API lên 16.0 cho khớp app mới
 NFTOKEN_QUERY_PARAMS = {
-    "appVersion": "15.48.1",
-    "config": '{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","addHorizontalBoxArtToVideoSummariesEnabled":"false","skOverlayTestEnabled":"false","homeFeedTestTVMovieListsEnabled":"false","baselineOnIpadEnabled":"true","trailersVideoIdLoggingFixEnabled":"true","postPlayPreviewsEnabled":"false","bypassContextualAssetsEnabled":"false","roarEnabled":"false","useSeason1AltLabelEnabled":"false","disableCDSSearchPaginationSectionKinds":["searchVideoCarousel"],"cdsSearchHorizontalPaginationEnabled":"true","searchPreQueryGamesEnabled":"true","kidsMyListEnabled":"true","billboardEnabled":"true","useCDSGalleryEnabled":"true","contentWarningEnabled":"true","videosInPopularGamesEnabled":"true","avifFormatEnabled":"false","sharksEnabled":"true"}',
+    "appVersion": "16.0.0",
+    "config": '{"gamesInTrailersEnabled":"false","isTrailersEvidenceEnabled":"false","cdsMyListSortEnabled":"true","kidsBillboardEnabled":"true","addHorizontalBoxArtToVideoSummariesEnabled":"false","skOverlayTestEnabled":"false","homeFeedTestTVMovieListsEnabled":"false","baselineOnIpadEnabled":"true","trailersVideoIdLoggingFixEnabled":"true","postPlayPreviewsEnabled":"false","bypassContextualAssetsEnabled":"false","roarEnabled":"false","useSeason1AltLabelEnabled":"false","disableCDSSearchPaginationSectionKinds":["searchVideoCarousel"],"cdsSearchHorizontalPaginationEnabled":"true","searchPreQueryGamesEnabled":"true","kidsMyListEnabled":"true","billboardEnabled":"true","useCDSGalleryEnabled":"true","contentWarningEnabled":"true","videosInPopularGamesEnabled":"true","avifFormatEnabled":"true","sharksEnabled":"true"}',
     "device_type": "NFAPPL-02-",
-    "esn": "NFAPPL-02-IPHONE8%3D1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
+    "esn": "NFAPPL-02-IPHONE15,3%3D1-PXA-05026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
     "idiom": "phone",
-    "iosVersion": "15.8.5",
+    "iosVersion": "18.0",
     "isTablet": "false",
     "languages": "en-US",
     "locale": "en-US",
-    "maxDeviceWidth": "375",
-    "model": "saget",
-    "modelType": "IPHONE8-1",
+    "maxDeviceWidth": "393", # Tăng độ phân giải cho iPhone 15 Pro
+    "model": "D82", # Model identifier của iPhone 15 Pro
+    "modelType": "IPHONE15,3", 
     "odpAware": "true",
     "path": '["account","token","default"]',
     "pathFormat": "graph",
-    "pixelDensity": "2.0",
+    "pixelDensity": "3.0", # iPhone 15 Pro dùng mật độ điểm ảnh 3.0
     "progressive": "false",
     "responseFormat": "json",
 }
+
 NFTOKEN_HEADERS = {
-    "User-Agent": "Argo/15.48.1 (iPhone; iOS 15.8.5; Scale/2.00)",
+    "User-Agent": "Argo/16.0.0 (iPhone; iOS 18.0; Scale/3.00)",
     "x-netflix.request.attempt": "1",
     "x-netflix.request.client.user.guid": "A4CS633D7VCBPE2GPK2HL4EKOE",
     "x-netflix.context.profile-guid": "A4CS633D7VCBPE2GPK2HL4EKOE",
-    "x-netflix.request.routing": '{"path":"/nq/mobile/nqios/~15.48.0/user","control_tag":"iosui_argo"}',
-    "x-netflix.context.app-version": "15.48.1",
+    "x-netflix.request.routing": '{"path":"/nq/mobile/nqios/~16.0.0/user","control_tag":"iosui_argo"}',
+    "x-netflix.context.app-version": "16.0.0",
     "x-netflix.argo.translated": "true",
     "x-netflix.context.form-factor": "phone",
-    "x-netflix.context.sdk-version": "2012.4",
-    "x-netflix.client.appversion": "15.48.1",
-    "x-netflix.context.max-device-width": "375",
+    "x-netflix.context.sdk-version": "2024.1", # Cập nhật SDK version cho năm 2024
+    "x-netflix.client.appversion": "16.0.0",
+    "x-netflix.context.max-device-width": "393",
     "x-netflix.context.ab-tests": "",
     "x-netflix.tracing.cl.useractionid": "4DC655F2-9C3C-4343-8229-CA1B003C3053",
     "x-netflix.client.type": "argo",
-    "x-netflix.client.ftl.esn": "NFAPPL-02-IPHONE8=1-PXA-02026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
+    "x-netflix.client.ftl.esn": "NFAPPL-02-IPHONE15,3=1-PXA-05026U9VV5O8AUKEAEO8PUJETCGDD4PQRI9DEB3MDLEMD0EACM4CS78LMD334MN3MQ3NMJ8SU9O9MVGS6BJCURM1PH1MUTGDPF4S4200",
     "x-netflix.context.locales": "en-US",
     "x-netflix.context.top-level-uuid": "90AFE39F-ADF1-4D8A-B33E-528730990FE3",
-    "x-netflix.client.iosversion": "15.8.5",
+    "x-netflix.client.iosversion": "18.0",
     "accept-language": "en-US;q=1",
     "x-netflix.argo.abtests": "",
-    "x-netflix.context.os-version": "15.8.5",
+    "x-netflix.context.os-version": "18.0",
     "x-netflix.request.client.context": '{"appState":"foreground"}',
     "x-netflix.context.ui-flavor": "argo",
     "x-netflix.argo.nfnsm": "9",
-    "x-netflix.context.pixel-density": "2.0",
+    "x-netflix.context.pixel-density": "3.0",
     "x-netflix.request.toplevel.uuid": "90AFE39F-ADF1-4D8A-B33E-528730990FE3",
     "x-netflix.request.client.timezoneid": "Asia/Ho_Chi_Minh",
 }
+
 
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
@@ -2852,13 +2854,10 @@ def send_notifications(config, info, is_subscribed, output_filename, formatted_c
 
 def get_account_page(session, proxy=None, request_timeout=15, fallback_account_page=False):
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept-Encoding": "identity",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+    "Accept-Encoding": "identity",
     }
+
 
     membership_url = "https://www.netflix.com/account/membership"
     response = session.get(membership_url, headers=headers, proxies=proxy, timeout=request_timeout)
@@ -3429,7 +3428,7 @@ def main():
     try:
         num_threads_input = input("Nhập số luồng muốn chạy (mặc định 30): ")
         num_threads = int(num_threads_input) if num_threads_input.strip() else 30
-        if num_threads < 1 or num_threads > 300:
+        if num_threads < 1 or num_threads > 9999999999:
             raise ValueError
     except ValueError:
         print("Nhập sai, đang dùng 30 luồng mặc định.")

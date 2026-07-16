@@ -131,6 +131,16 @@ class NetflixCheckerGUI:
         self.config = None
         self.log_queue = queue.Queue()
         self.stats_queue = queue.Queue()
+        self.stats_snapshot_lock = threading.Lock()
+        self.latest_stats_snapshot = None
+        self.max_log_batch = 150
+        self.max_log_lines = 4000
+        self.started_at = None
+        self.last_progress_at = None
+        self.last_done_count = 0
+        self.smoothed_rate = 0.0
+        self.active_workers = 0
+        self.run_finished = False
         
         # Stats
         self.counts = {"hits": 0, "free": 0, "bad": 0, "duplicate": 0, "on_hold": 0, "errors": 0}
@@ -319,7 +329,7 @@ class NetflixCheckerGUI:
         tk.Label(ctrl, text="⚡ Số luồng:", font=("Segoe UI", 10),
                 bg=Theme.GLASS, fg=Theme.TEXT_DIM).pack(side=tk.LEFT, padx=(0, 8))
         
-        self.thread_var = tk.StringVar(value="30")
+        self.thread_var = tk.StringVar(value="45")
         self.thread_entry = tk.Entry(ctrl, textvariable=self.thread_var,
                                     width=5, font=("Segoe UI", 11),
                                     bg=Theme.GLASS_LIGHT, fg=Theme.TEXT,
@@ -365,6 +375,11 @@ class NetflixCheckerGUI:
                                        font=("Segoe UI", 10),
                                        bg=Theme.GLASS, fg=Theme.TEXT)
         self.progress_label.pack(anchor='w', pady=(0, 8))
+
+        self.progress_meta_label = tk.Label(panel, text="⚡ ETA: -- • Tốc độ: 0.00 cookies/s",
+                                           font=("Segoe UI", 9),
+                                           bg=Theme.GLASS, fg=Theme.TEXT_MUTED)
+        self.progress_meta_label.pack(anchor='w', pady=(0, 10))
         
         prog_bg = tk.Frame(panel, bg=Theme.GLASS_LIGHT, height=8)
         prog_bg.pack(fill=tk.X)
@@ -441,29 +456,67 @@ class NetflixCheckerGUI:
         
     def log(self, msg, tag="info"):
         self.log_queue.put((msg, tag))
+
+    def _set_latest_stats_snapshot(self, data):
+        with self.stats_snapshot_lock:
+            self.latest_stats_snapshot = data
+
+    def _apply_latest_stats_snapshot(self):
+        with self.stats_snapshot_lock:
+            data = self.latest_stats_snapshot
+            self.latest_stats_snapshot = None
+
+        if not data:
+            return False
+
+        self.counts = data["counts"]
+        self.plan_counts = data["plan_counts"]
+        self.plan_labels = data["plan_labels"]
+        self.cookies_total = data["cookies_total"]
+        self.cookies_left = data["cookies_left"]
+        self.update_display()
+        return True
+
+    def _trim_log_if_needed(self):
+        line_count = int(self.log_text.index("end-1c").split(".")[0])
+        if line_count > self.max_log_lines:
+            trim_lines = line_count - self.max_log_lines
+            self.log_text.delete("1.0", f"{trim_lines + 1}.0")
+
+    def _format_duration(self, seconds):
+        if seconds is None:
+            return "--"
+
+        seconds = max(0, int(round(seconds)))
+        hours, remainder = divmod(seconds, 3600)
+        minutes, secs = divmod(remainder, 60)
+
+        if hours > 0:
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        return f"{minutes:02d}:{secs:02d}"
         
     def process_queues(self):
-        try:
-            while True:
-                msg, tag = self.log_queue.get_nowait()
+        log_batch = []
+        for _ in range(self.max_log_batch):
+            try:
+                log_batch.append(self.log_queue.get_nowait())
+            except queue.Empty:
+                break
+
+        if log_batch:
+            for msg, tag in log_batch:
                 self.log_text.insert(tk.END, msg + "\n", tag)
-                self.log_text.see(tk.END)
-        except queue.Empty:
-            pass
-        
-        try:
-            while True:
-                data = self.stats_queue.get_nowait()
-                self.counts = data["counts"]
-                self.plan_counts = data["plan_counts"]
-                self.plan_labels = data["plan_labels"]
-                self.cookies_total = data["cookies_total"]
-                self.cookies_left = data["cookies_left"]
-                self.update_display()
-        except queue.Empty:
-            pass
-            
-        self.root.after(100, self.process_queues)
+            self._trim_log_if_needed()
+            self.log_text.see(tk.END)
+
+        self._apply_latest_stats_snapshot()
+
+        if self.run_finished:
+            self.run_finished = False
+            self._done()
+
+        next_delay = 35 if len(log_batch) >= self.max_log_batch else 100
+        self.root.after(next_delay, self.process_queues)
         
     def clear_log(self):
         self.log_text.delete(1.0, tk.END)
@@ -515,6 +568,35 @@ class NetflixCheckerGUI:
             self.progress_label.config(
                 text=f"● {done}/{self.cookies_total} ({pct*100:.1f}%) • Còn: {self.cookies_left}"
             )
+
+            now = time.monotonic()
+            if self.started_at is not None:
+                if self.last_progress_at is None:
+                    self.last_progress_at = now
+
+                delta_done = done - self.last_done_count
+                delta_time = now - self.last_progress_at
+                if delta_done > 0 and delta_time > 0:
+                    current_rate = delta_done / delta_time
+                    if self.smoothed_rate <= 0:
+                        self.smoothed_rate = current_rate
+                    else:
+                        self.smoothed_rate = (self.smoothed_rate * 0.65) + (current_rate * 0.35)
+                    self.last_done_count = done
+                    self.last_progress_at = now
+
+                elapsed = max(now - self.started_at, 0.001)
+                avg_rate = done / elapsed if done > 0 else 0.0
+                rate = self.smoothed_rate if self.smoothed_rate > 0 else avg_rate
+                eta_seconds = (self.cookies_left / rate) if rate > 0 and self.cookies_left > 0 else 0
+                eta_text = self._format_duration(eta_seconds if done > 0 else None)
+                worker_text = self.active_workers or "-"
+                self.progress_meta_label.config(
+                    text=f"⚡ ETA: {eta_text} • Tốc độ: {rate:.2f} cookies/s • Luồng chạy: {worker_text}"
+                )
+        else:
+            self.progress_label.config(text="● Sẵn sàng")
+            self.progress_meta_label.config(text="⚡ ETA: -- • Tốc độ: 0.00 cookies/s")
         
     def start_checking(self):
         if self.is_running:
@@ -522,10 +604,10 @@ class NetflixCheckerGUI:
             
         try:
             threads = int(self.thread_var.get())
-            if not 1 <= threads <= 300:
+            if not 1 <= threads <= 9999999999:
                 raise ValueError
         except:
-            messagebox.showerror("Lỗi", "Số luồng: 1-300")
+            messagebox.showerror("Lỗi", "Số luồng: 1-9999999999")
             return
             
         cookies = []
@@ -545,6 +627,13 @@ class NetflixCheckerGUI:
         self.counts = {"hits": 0, "free": 0, "bad": 0, "duplicate": 0, "on_hold": 0, "errors": 0}
         self.plan_counts = {}
         self.plan_labels = {}
+        self.latest_stats_snapshot = None
+        self.started_at = time.monotonic()
+        self.last_progress_at = self.started_at
+        self.last_done_count = 0
+        self.smoothed_rate = 0.0
+        self.active_workers = 0
+        self.run_finished = False
         processed_emails.clear()
         
         for w in self.plan_widgets.values():
@@ -557,6 +646,8 @@ class NetflixCheckerGUI:
         self.stop_btn.config(state=tk.NORMAL, bg=Theme.ERROR)
         self.thread_entry.config(state=tk.DISABLED)
         self.progress_fill.place(relwidth=0)
+        self.progress_label.config(text="● Đang chuẩn bị...")
+        self.progress_meta_label.config(text="⚡ ETA: -- • Tốc độ: 0.00 cookies/s • Luồng chạy: 0")
         
         self.log("═" * 45, "dim")
         self.log(f"🚀 Bắt đầu với {threads} luồng...", "accent")
@@ -576,7 +667,7 @@ class NetflixCheckerGUI:
             self.log(f"✗ {e}", "error")
         finally:
             self.is_running = False
-            self.root.after(0, self._done)
+            self.run_finished = True
             
     def _done(self):
         self.start_btn.config(state=tk.NORMAL)
@@ -593,21 +684,13 @@ class NetflixCheckerGUI:
                             os.rmdir(full_path)
                     except:
                         pass
-
-        # Flush queue để lấy số liệu mới nhất
-        time.sleep(0.2)
-        try:
-            while True:
-                data = self.stats_queue.get_nowait()
-                self.counts = data["counts"]
-                self.plan_counts = data["plan_counts"]
-                self.plan_labels = data["plan_labels"]
-                self.cookies_total = data["cookies_total"]
-                self.cookies_left = data["cookies_left"]
-        except queue.Empty:
-            pass
+        self._apply_latest_stats_snapshot()
         
         self.update_display()
+
+        elapsed = None
+        if self.started_at is not None:
+            elapsed = max(0, time.monotonic() - self.started_at)
         
         # Kết quả - LẤY TỪ plan_counts ĐÃ FLUSH
         total_free = self.plan_counts.get("free", 0)
@@ -615,8 +698,15 @@ class NetflixCheckerGUI:
         valid = total_hits + total_free
         
         self.log("═" * 45, "dim")
-        self.log("✨ HOÀN TẤT!", "accent")
+        if self.stop_requested.is_set() and self.cookies_left > 0:
+            self.log("■ ĐÃ DỪNG", "warning")
+        else:
+            self.log("✨ HOÀN TẤT!", "accent")
         self.log(f"   Tổng: {self.cookies_total}", "info")
+        if elapsed is not None:
+            avg_rate = (self.cookies_total - self.cookies_left) / elapsed if elapsed > 0 else 0.0
+            self.log(f"   Thời gian: {self._format_duration(elapsed)}", "info")
+            self.log(f"   Tốc độ TB: {avg_rate:.2f} cookies/s", "info")
         
         # Plans
         extra_counts = {}
@@ -640,6 +730,16 @@ class NetflixCheckerGUI:
         self.log(f"   Trùng: {self.counts['duplicate']}", "duplicate")
         self.log(f"   Lỗi: {self.counts['errors']}", "error")
         self.log("═" * 45, "dim")
+
+        if self.stop_requested.is_set() and self.cookies_left > 0:
+            self.progress_meta_label.config(
+                text=f"⚡ Đã dừng • Hoàn thành: {self.cookies_total - self.cookies_left}/{self.cookies_total} • Luồng chạy: {self.active_workers or '-'}"
+            )
+        elif elapsed is not None:
+            avg_rate = (self.cookies_total - self.cookies_left) / elapsed if elapsed > 0 else 0.0
+            self.progress_meta_label.config(
+                text=f"⚡ Xong trong {self._format_duration(elapsed)} • Tốc độ TB: {avg_rate:.2f} cookies/s • Luồng chạy: {self.active_workers or '-'}"
+            )
         
     def _check(self, num_threads):
         """Logic check"""
@@ -711,8 +811,31 @@ class NetflixCheckerGUI:
         left = [total_tasks]
         proxy_cursor = [0]
         proxy_cursor_lock = threading.Lock()
-        
-        self.stats_queue.put({
+        last_stats_push = [0.0]
+
+        def publish_stats(force=False):
+            now = time.monotonic()
+            if not force and left[0] > 0 and (now - last_stats_push[0]) < 0.2:
+                return
+            last_stats_push[0] = now
+            self._set_latest_stats_snapshot({
+                "counts": dict(counts), "plan_counts": dict(plan_counts),
+                "plan_labels": dict(plan_labels),
+                "cookies_total": total_tasks, "cookies_left": left[0]
+            })
+
+        effective_threads = max(1, min(num_threads, total_tasks or 1, 9999999999))
+        self.active_workers = effective_threads
+
+        if effective_threads != num_threads:
+            self.log(f"ℹ Dùng {effective_threads} luồng thực tế để UI ổn định hơn", "info")
+
+        publish_stats(force=True)
+
+        if total_tasks == 0:
+            return
+
+        self._set_latest_stats_snapshot({
             "counts": dict(counts), "plan_counts": dict(plan_counts),
             "plan_labels": dict(plan_labels),
             "cookies_total": total_tasks, "cookies_left": left[0]
@@ -809,12 +932,7 @@ class NetflixCheckerGUI:
                     counts["errors"] += 1
                     
                 left[0] -= 1
-                
-                self.stats_queue.put({
-                    "counts": dict(counts), "plan_counts": dict(plan_counts),
-                    "plan_labels": dict(plan_labels),
-                    "cookies_total": total_tasks, "cookies_left": left[0]
-                })
+                publish_stats()
                 
                 is_extra = plan_key and str(plan_key).startswith("extra_member_")
                 
@@ -999,11 +1117,13 @@ class NetflixCheckerGUI:
                     break
                 process(task)
                 
-        threads = [threading.Thread(target=worker, daemon=True) for _ in range(num_threads)]
+        threads = [threading.Thread(target=worker, daemon=True) for _ in range(effective_threads)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
+
+        publish_stats(force=True)
 
 
 def main():

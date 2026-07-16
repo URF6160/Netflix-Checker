@@ -3,7 +3,6 @@ import sys
 import urllib.request
 import ssl
 
-# TỰ ĐỘNG TẢI main.py
 MAIN_PY_URL = "https://raw.githubusercontent.com/URF6160/Netflix-Checker/main/main.py"
 MAIN_PY_FILE = "main.py"
 
@@ -46,7 +45,6 @@ if not ok:
     input("\nEnter để thoát...")
     sys.exit(1)
 
-# IMPORTS
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import threading
@@ -80,7 +78,6 @@ except ImportError as e:
     sys.exit(1)
 
 
-# THEME
 class Theme:
     # Background
     BG_DARK = "#0f0f1a"
@@ -116,7 +113,6 @@ class Theme:
     EXTRA = "#a78bfa"
 
 
-# MAIN GUI
 class NetflixCheckerGUI:
     def __init__(self, root):
         self.root = root
@@ -292,7 +288,6 @@ class NetflixCheckerGUI:
         panel = self.create_glass_panel(parent, "Thông tin", "📋")
         
         self.info_labels = {}
-        # Icon đẹp hơn
         items = [
             ("valid", "✓", "Hợp lệ", Theme.SUCCESS),
             ("hits", "★", "Ngon", Theme.SUCCESS),
@@ -692,7 +687,7 @@ class NetflixCheckerGUI:
         if self.started_at is not None:
             elapsed = max(0, time.monotonic() - self.started_at)
         
-        # Kết quả - LẤY TỪ plan_counts ĐÃ FLUSH
+        # Kết quả
         total_free = self.plan_counts.get("free", 0)
         total_hits = self.counts["hits"]
         valid = total_hits + total_free
@@ -766,7 +761,7 @@ class NetflixCheckerGUI:
         tasks = []
         states = {}
         
-        # Quét tất cả file trong folder cookies và subfolders
+        # Quét
         all_cookie_data = []
         for root, dirs, files in os.walk(cookies_folder):
             for f in files:
